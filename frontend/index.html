@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NHS Sample Archive Lookup (Synthetic Demo)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #f4f5f7;
+    margin: 0;
+    padding: 40px 20px;
+    color: #1a1a1a;
+  }
+  .container {
+    max-width: 480px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e0e0e0;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { font-size: 13px; color: #666; margin: 0 0 20px; }
+  .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  input[type="text"] { flex: 1; padding: 10px 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
+  button { padding: 10px 18px; background: #005EB8; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #00458a; }
+  #result { border-top: 1px solid #eee; padding-top: 16px; display: none; }
+  .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .sample-id { font-weight: 600; font-size: 15px; }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 12px; }
+  .badge-active { background: #e1f5ee; color: #085041; }
+  .badge-deleted { background: #fcebeb; color: #791f1f; }
+  table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  td { padding: 5px 0; }
+  td.label { color: #666; }
+  td.value { text-align: right; }
+  #error { display: none; color: #a32d2d; font-size: 13px; padding: 10px 0; }
+  #loading { display: none; color: #666; font-size: 13px; }
+  .notice { font-size: 11px; color: #999; margin-top: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>NHS Sample Archive Lookup</h1>
+  <p class="subtitle">Synthetic demo data only. No real patient information.</p>
+
+  <div class="search-row">
+    <input type="text" id="sampleIdInput" placeholder="e.g. BLK-QEH-2026-0001">
+    <button id="searchBtn">Search</button>
+  </div>
+
+  <div id="loading">Searching...</div>
+  <div id="error"></div>
+
+  <div id="result">
+    <div class="result-header">
+      <span class="sample-id" id="resSampleId"></span>
+      <span class="badge" id="resBadge"></span>
+    </div>
+    <table>
+      <tr><td class="label">Type</td><td class="value" id="resType"></td></tr>
+      <tr><td class="label">Sending hospital</td><td class="value" id="resHospital"></td></tr>
+      <tr><td class="label">Archive site</td><td class="value" id="resArchiveSite"></td></tr>
+      <tr><td class="label">Upload date</td><td class="value" id="resUploadDate"></td></tr>
+      <tr id="rowStorageClass"><td class="label">Storage tier</td><td class="value" id="resStorageClass"></td></tr>
+      <tr id="rowFileLocation"><td class="label">S3 location</td><td class="value" id="resFileLocation" style="font-family: monospace; font-size: 11px;"></td></tr>
+      <tr id="rowDeletedDate" style="display:none;"><td class="label">Deleted on</td><td class="value" id="resDeletedDate"></td></tr>
+      <tr id="rowDeletionReason" style="display:none;"><td class="label">Reason</td><td class="value" id="resDeletionReason"></td></tr>
+    </table>
+  </div>
+
+  <p class="notice">NHS Sample Archive Platform &mdash; portfolio project (Terraform build)</p>
+</div>
+
+<script>
+  const API_BASE_URL = "https://deams28ymh.execute-api.eu-west-2.amazonaws.com";
+
+  const input = document.getElementById('sampleIdInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const resultDiv = document.getElementById('result');
+  const errorDiv = document.getElementById('error');
+  const loadingDiv = document.getElementById('loading');
+
+  async function search() {
+    const sampleId = input.value.trim();
+    resultDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+
+    if (!sampleId) {
+      errorDiv.textContent = 'Enter a sample ID first.';
+      errorDiv.style.display = 'block';
+      return;
+    }
+
+    loadingDiv.style.display = 'block';
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/samples/${encodeURIComponent(sampleId)}`);
+      const data = await res.json();
+      loadingDiv.style.display = 'none';
+
+      if (res.status === 404) {
+        errorDiv.textContent = data.error || `Sample ${sampleId} not found.`;
+        errorDiv.style.display = 'block';
+        return;
+      }
+
+      if (!res.ok) {
+        errorDiv.textContent = 'Something went wrong looking up that sample.';
+        errorDiv.style.display = 'block';
+        return;
+      }
+
+      renderResult(data);
+    } catch (err) {
+      loadingDiv.style.display = 'none';
+      errorDiv.textContent = 'Could not reach the archive service.';
+      errorDiv.style.display = 'block';
+    }
+  }
+
+  function renderResult(item) {
+    document.getElementById('resSampleId').textContent = item.sampleId || '';
+    document.getElementById('resType').textContent = item.sampleType || '';
+    document.getElementById('resHospital').textContent = item.sendingHospital || '';
+    document.getElementById('resArchiveSite').textContent = item.archiveSite || '';
+    document.getElementById('resUploadDate').textContent = item.uploadDate ? item.uploadDate.split('T')[0] : '';
+
+    const badge = document.getElementById('resBadge');
+    const isDeleted = item.status === 'Deleted';
+    badge.textContent = item.status || '';
+    badge.className = 'badge ' + (isDeleted ? 'badge-deleted' : 'badge-active');
+
+    document.getElementById('rowStorageClass').style.display = isDeleted ? 'none' : '';
+    document.getElementById('rowFileLocation').style.display = isDeleted ? 'none' : '';
+    document.getElementById('resStorageClass').textContent = item.storageClass || '';
+    document.getElementById('resFileLocation').textContent = item.fileLocation || '';
+
+    document.getElementById('rowDeletedDate').style.display = isDeleted ? '' : 'none';
+    document.getElementById('rowDeletionReason').style.display = isDeleted ? '' : 'none';
+    document.getElementById('resDeletedDate').textContent = item.deletedDate ? item.deletedDate.split('T')[0] : '';
+    document.getElementById('resDeletionReason').textContent = item.deletionReason || '';
+
+    resultDiv.style.display = 'block';
+  }
+
+  searchBtn.addEventListener('click', search);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') search();
+  });
+</script>
+</body>
+</html>
