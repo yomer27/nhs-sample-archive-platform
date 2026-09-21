@@ -63,6 +63,21 @@ This project was built in two phases:
 
 Both phases were fully torn down after verification; nothing in this repo is currently deployed.
 
+## Extension: self-hosted retention checker
+
+Alongside the serverless retention Lambda, this project includes a self-hosted equivalent, built to gain hands-on experience with traditional server-based deployment rather than relying solely on serverless.
+
+A Python script (`retention-checker/retention_checker.py`) scans the S3 bucket for objects past a configurable retention threshold and logs its findings (dry-run by default, no deletion logic wired up). It runs the same way a real operations team might run a scheduled housekeeping job:
+
+- **Linux (Ubuntu on EC2)**: provisioned and administered via SSH
+- **Docker**: the script is containerised for portable, repeatable execution
+- **Bash + cron**: a wrapper script (`run.sh`) runs the container daily
+- **GitHub Actions**: a CI/CD pipeline (`.github/workflows/docker-build.yml`) builds and pushes the image to Docker Hub automatically on every commit touching `retention-checker/`
+
+This isn't meant to replace the serverless Lambda flow, it's a deliberate side-by-side comparison: the Lambda approach needs no infrastructure management but is bound to AWS's event/scheduling model, while this approach is more portable and gives full control over the runtime, at the cost of having to manage the server yourself.
+
+Like the rest of the project, all infrastructure (EC2 instance, S3 bucket) was torn down after verification.
+
 ## Design decisions worth noting
 
 - **SSE-S3 over SSE-KMS**: chosen to keep the project genuinely free (KMS customer-managed keys cost ~$1/month), while still being fully encrypted at rest.
@@ -82,12 +97,20 @@ Both phases were fully torn down after verification; nothing in this repo is cur
 
 ```
 nhs-sample-archive/
-  terraform/       Infrastructure as code (all AWS resources)
-  lambda/           Python source for the three Lambda functions
+  terraform/        Infrastructure as code (all AWS resources)
+  lambda/            Python source for the three Lambda functions
     ingest/
     query/
     retention/
-  frontend/         Static lookup page (index.html)
+  frontend/          Static lookup page (index.html)
+  retention-checker/ Self-hosted retention checker (Docker, cron, CI/CD)
+    retention_checker.py
+    Dockerfile
+    requirements.txt
+    run.sh
+  .github/
+    workflows/
+      docker-build.yml
   docs/
     architecture-diagram.png
     images/
@@ -105,8 +128,18 @@ terraform apply    # prompts for an alert email, or set it in terraform.tfvars
 
 Outputs include the API URL and frontend website URL. Tear down with `terraform destroy`.
 
+To run the self-hosted retention checker:
+
+```
+cd retention-checker
+docker build -t retention-checker:latest .
+docker run --rm -e BUCKET_NAME="<your-bucket-name>" -e AWS_REGION="eu-west-2" -v ~/.aws:/root/.aws:ro retention-checker:latest
+```
+
 ## Tech stack
 
 AWS: S3, DynamoDB, Lambda, API Gateway (HTTP API), EventBridge Scheduler, SNS, CloudTrail, IAM
 IaC: Terraform
-Language: Python 3.13 (Lambda), vanilla HTML/CSS/JS (frontend)
+Containers/CI: Docker, GitHub Actions
+Systems: Linux (Ubuntu), Bash, cron
+Language: Python 3.13 (Lambda), Python 3.12 (retention checker), vanilla HTML/CSS/JS (frontend)
